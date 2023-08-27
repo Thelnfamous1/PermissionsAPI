@@ -25,9 +25,10 @@
 
 package me.lucko.fabric.api.permissions.v0;
 
-import net.minecraft.commands.SharedSuggestionProvider;
+import me.infamous.permissions.PermissionsMod;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.common.MinecraftForge;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
@@ -47,12 +48,20 @@ public interface Options {
      * @param key the option key
      * @return the option value
      */
-    static @NotNull Optional<String> get(@NotNull SharedSuggestionProvider source, @NotNull String key) {
+    static @NotNull Optional<String> get(@NotNull CommandSourceStack source, @NotNull String key) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(key, "key");
-        OptionRequestEvent event = new OptionRequestEvent(source, key);
-        MinecraftForge.EVENT_BUS.post(event);
-        return event.getValue();
+        if(source.isPlayer()){
+            ServerPlayer player = source.getPlayer();
+            try{
+                return PermissionsMod.getPerms()
+                        .map(lp -> lp.getPlayerAdapter(ServerPlayer.class).getUser(player))
+                        .map(user -> user.getCachedData().getMetaData().getMetaValue(key));
+            } catch (IllegalStateException e){
+                PermissionsMod.trackAndLogMissingCapability(player.getUUID());
+                return Optional.empty();
+            }
+        } else return Optional.empty();
     }
 
     /**
@@ -65,7 +74,7 @@ public interface Options {
      * @return the option value
      */
     @Contract("_, _, !null -> !null")
-    static String get(@NotNull SharedSuggestionProvider source, @NotNull String key, String defaultValue) {
+    static String get(@NotNull CommandSourceStack source, @NotNull String key, String defaultValue) {
         return get(source, key).orElse(defaultValue);
     }
 
@@ -89,7 +98,7 @@ public interface Options {
      * @param <T> the type of the transformed result
      * @return the transformed option value
      */
-    static <T> @NotNull Optional<T> get(@NotNull SharedSuggestionProvider source, @NotNull String key, @NotNull Function<String, ? extends T> valueTransformer) {
+    static <T> @NotNull Optional<T> get(@NotNull CommandSourceStack source, @NotNull String key, @NotNull Function<String, ? extends T> valueTransformer) {
         return get(source, key).flatMap(value -> {
             try {
                 return Optional.ofNullable(valueTransformer.apply(value));
@@ -122,7 +131,7 @@ public interface Options {
      * @return the transformed option value
      */
     @Contract("_, _, !null, _ -> !null")
-    static <T> T get(@NotNull SharedSuggestionProvider source, @NotNull String key, T defaultValue, @NotNull Function<String, ? extends T> valueTransformer) {
+    static <T> T get(@NotNull CommandSourceStack source, @NotNull String key, T defaultValue, @NotNull Function<String, ? extends T> valueTransformer) {
         return Options.<T>get(source, key, valueTransformer).orElse(defaultValue);
     }
 

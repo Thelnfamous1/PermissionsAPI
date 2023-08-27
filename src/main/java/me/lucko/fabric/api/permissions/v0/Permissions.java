@@ -26,12 +26,12 @@
 package me.lucko.fabric.api.permissions.v0;
 
 import com.mojang.authlib.GameProfile;
-import me.lucko.fabric.api.permissions.v0.util.TriState;
+import me.infamous.permissions.PermissionsMod;
+import net.luckperms.api.util.Tristate;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.common.MinecraftForge;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
@@ -46,61 +46,75 @@ import java.util.function.Predicate;
 public interface Permissions {
 
     /**
-     * Gets the {@link TriState state} of a {@code permission} for the given source.
+     * Gets the {@link Tristate state} of a {@code permission} for the given source.
      *
      * @param source the source
      * @param permission the permission
      * @return the state of the permission
      */
-    static @NotNull TriState getPermissionValue(@NotNull SharedSuggestionProvider source, @NotNull String permission) {
+    static @NotNull Tristate getPermissionValue(@NotNull CommandSourceStack source, @NotNull String permission) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(permission, "permission");
-        PermissionCheckEvent event = new PermissionCheckEvent(source, permission);
-        MinecraftForge.EVENT_BUS.post(event);
-        return TriState.fromEventResult(event.getResult());
+        if(source.isPlayer()){
+            ServerPlayer player = source.getPlayer();
+            UUID uuid = player.getUUID();
+            try{
+                return PermissionsMod.getPerms()
+                        .map(lp -> lp.getPlayerAdapter(ServerPlayer.class).getUser(player))
+                        .map(user -> user.getCachedData().getPermissionData().checkPermission(permission))
+                        .orElse(Tristate.UNDEFINED);
+            } catch (IllegalStateException e){
+                PermissionsMod.trackAndLogMissingCapability(uuid);
+                return Tristate.UNDEFINED;
+            }
+        } else return Tristate.UNDEFINED;
     }
 
     /**
      * Performs a permission check, falling back to the {@code defaultValue} if the resultant
-     * state is {@link TriState#DEFAULT}.
+     * state is {@link Tristate#UNDEFINED}.
      *
      * @param source the source to perform the check for
      * @param permission the permission to check
      * @param defaultValue the default value to use if nothing has been set
      * @return the result of the permission check
      */
-    static boolean check(@NotNull SharedSuggestionProvider source, @NotNull String permission, boolean defaultValue) {
-        return getPermissionValue(source, permission).orElse(defaultValue);
+    static boolean check(@NotNull CommandSourceStack source, @NotNull String permission, boolean defaultValue) {
+        Tristate permissionValue = getPermissionValue(source, permission);
+        if(permissionValue == Tristate.UNDEFINED) return defaultValue;
+        return permissionValue.asBoolean();
     }
 
     /**
      * Performs a permission check, falling back to requiring the {@code defaultRequiredLevel}
-     * if the resultant state is {@link TriState#DEFAULT}.
+     * if the resultant state is {@link Tristate#UNDEFINED}.
      *
      * @param source the source to perform the check for
      * @param permission the permission to check
      * @param defaultRequiredLevel the required permission level to check for as a fallback
      * @return the result of the permission check
      */
-    static boolean check(@NotNull SharedSuggestionProvider source, @NotNull String permission, int defaultRequiredLevel) {
-        return getPermissionValue(source, permission).orElseGet(() -> source.hasPermission(defaultRequiredLevel));
+    static boolean check(@NotNull CommandSourceStack source, @NotNull String permission, int defaultRequiredLevel) {
+        Tristate permissionValue = getPermissionValue(source, permission);
+        if(permissionValue == Tristate.UNDEFINED) return source.hasPermission(defaultRequiredLevel);
+        return permissionValue.asBoolean();
     }
 
     /**
      * Performs a permission check, falling back to {@code false} if the resultant state
-     * is {@link TriState#DEFAULT}.
+     * is {@link Tristate#UNDEFINED}.
      *
      * @param source the source to perform the check for
      * @param permission the permission to check
      * @return the result of the permission check
      */
-    static boolean check(@NotNull SharedSuggestionProvider source, @NotNull String permission) {
-        return getPermissionValue(source, permission).orElse(false);
+    static boolean check(@NotNull CommandSourceStack source, @NotNull String permission) {
+        return getPermissionValue(source, permission).asBoolean();
     }
 
     /**
      * Creates a predicate which returns the result of performing a permission check,
-     * falling back to the {@code defaultValue} if the resultant state is {@link TriState#DEFAULT}.
+     * falling back to the {@code defaultValue} if the resultant state is {@link Tristate#UNDEFINED}.
      *
      * @param permission the permission to check
      * @param defaultValue the default value to use if nothing has been set
@@ -114,7 +128,7 @@ public interface Permissions {
     /**
      * Creates a predicate which returns the result of performing a permission check,
      * falling back to requiring the {@code defaultRequiredLevel} if the resultant state is
-     * {@link TriState#DEFAULT}.
+     * {@link Tristate#UNDEFINED}.
      *
      * @param permission the permission to check
      * @param defaultRequiredLevel the required permission level to check for as a fallback
@@ -127,7 +141,7 @@ public interface Permissions {
 
     /**
      * Creates a predicate which returns the result of performing a permission check,
-     * falling back to {@code false} if the resultant state is {@link TriState#DEFAULT}.
+     * falling back to {@code false} if the resultant state is {@link Tristate#UNDEFINED}.
      *
      * @param permission the permission to check
      * @return a predicate that will perform the permission check
@@ -138,20 +152,20 @@ public interface Permissions {
     }
 
     /**
-     * Gets the {@link TriState state} of a {@code permission} for the given entity.
+     * Gets the {@link Tristate state} of a {@code permission} for the given entity.
      *
      * @param entity the entity
      * @param permission the permission
      * @return the state of the permission
      */
-    static @NotNull TriState getPermissionValue(@NotNull Entity entity, @NotNull String permission) {
+    static @NotNull Tristate getPermissionValue(@NotNull Entity entity, @NotNull String permission) {
         Objects.requireNonNull(entity, "entity");
         return getPermissionValue(entity.createCommandSourceStack(), permission);
     }
 
     /**
      * Performs a permission check, falling back to the {@code defaultValue} if the resultant
-     * state is {@link TriState#DEFAULT}.
+     * state is {@link Tristate#UNDEFINED}.
      *
      * @param entity the entity to perform the check for
      * @param permission the permission to check
@@ -165,7 +179,7 @@ public interface Permissions {
 
     /**
      * Performs a permission check, falling back to requiring the {@code defaultRequiredLevel}
-     * if the resultant state is {@link TriState#DEFAULT}.
+     * if the resultant state is {@link Tristate#UNDEFINED}.
      *
      * @param entity the entity to perform the check for
      * @param permission the permission to check
@@ -179,7 +193,7 @@ public interface Permissions {
 
     /**
      * Performs a permission check, falling back to {@code false} if the resultant state
-     * is {@link TriState#DEFAULT}.
+     * is {@link Tristate#UNDEFINED}.
      *
      * @param entity the entity to perform the check for
      * @param permission the permission to check
@@ -191,23 +205,29 @@ public interface Permissions {
     }
 
     /**
-     * Gets the {@link TriState state} of a {@code permission} for the given (potentially) offline player.
+     * Gets the {@link Tristate state} of a {@code permission} for the given (potentially) offline player.
      *
      * @param uuid the player uuid
      * @param permission the permission
      * @return the state of the permission
      */
-    static @NotNull CompletableFuture<TriState> getPermissionValue(@NotNull UUID uuid, @NotNull String permission) {
+    static @NotNull CompletableFuture<Tristate> getPermissionValue(@NotNull UUID uuid, @NotNull String permission) {
         Objects.requireNonNull(uuid, "uuid");
         Objects.requireNonNull(permission, "permission");
-        OfflinePermissionCheckEvent event = new OfflinePermissionCheckEvent(uuid, permission);
-        MinecraftForge.EVENT_BUS.post(event);
-        return CompletableFuture.completedFuture(TriState.fromEventResult(event.getResult()));
+        try{
+            return PermissionsMod.getPerms()
+                    .map(lp -> lp.getUserManager().loadUser(uuid))
+                    .map(userFuture -> userFuture.thenApplyAsync(user -> user.getCachedData().getPermissionData().checkPermission(permission)))
+                    .orElse(CompletableFuture.completedFuture(Tristate.UNDEFINED));
+        } catch (IllegalStateException e){
+            PermissionsMod.trackAndLogMissingCapability(uuid);
+            return CompletableFuture.completedFuture(Tristate.UNDEFINED);
+        }
     }
 
     /**
      * Performs a permission check, falling back to the {@code defaultValue} if the resultant
-     * state is {@link TriState#DEFAULT}.
+     * state is {@link Tristate#UNDEFINED}.
      *
      * @param uuid the player to perform the check for
      * @param permission the permission to check
@@ -215,24 +235,28 @@ public interface Permissions {
      * @return the result of the permission check
      */
     static CompletableFuture<Boolean> check(@NotNull UUID uuid, @NotNull String permission, boolean defaultValue) {
-        return getPermissionValue(uuid, permission).thenApplyAsync(state -> state.orElse(defaultValue));
+        CompletableFuture<Tristate> permissionValue = getPermissionValue(uuid, permission);
+        return permissionValue.thenApplyAsync(state -> {
+            if(state == Tristate.UNDEFINED) return defaultValue;
+            return state.asBoolean();
+        });
     }
 
     /**
      * Performs a permission check, falling back to {@code false} if the resultant state
-     * is {@link TriState#DEFAULT}.
+     * is {@link Tristate#UNDEFINED}.
      *
      * @param uuid the source to perform the check for
      * @param permission the permission to check
      * @return the result of the permission check
      */
     static CompletableFuture<Boolean> check(@NotNull UUID uuid, @NotNull String permission) {
-        return getPermissionValue(uuid, permission).thenApplyAsync(state -> state.orElse(false));
+        return getPermissionValue(uuid, permission).thenApplyAsync(Tristate::asBoolean);
     }
 
     /**
      * Performs a permission check, falling back to {@code false} if the resultant state
-     * is {@link TriState#DEFAULT}.
+     * is {@link Tristate#UNDEFINED}.
      *
      * @param profile the player profile to perform the check for
      * @param permission the permission to check
@@ -246,7 +270,7 @@ public interface Permissions {
 
     /**
      * Performs a permission check, falling back to {@code false} if the resultant state
-     * is {@link TriState#DEFAULT}.
+     * is {@link Tristate#UNDEFINED}.
      *
      * @param profile the player profile to perform the check for
      * @param permission the permission to check
@@ -259,7 +283,7 @@ public interface Permissions {
 
     /**
      * Performs a permission check, falling back to requiring the {@code defaultRequiredLevel}
-     * if the resultant state is {@link TriState#DEFAULT}.
+     * if the resultant state is {@link Tristate#UNDEFINED}.
      *
      * @param profile the player profile to perform the check for
      * @param permission the permission to check
@@ -271,7 +295,10 @@ public interface Permissions {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(server, "server");
         BooleanSupplier permissionLevelCheck = () -> server.getProfilePermissions(profile) >= defaultRequiredLevel;
-        return getPermissionValue(profile.getId(), permission).thenApplyAsync(state -> state.orElseGet(permissionLevelCheck));
+        return getPermissionValue(profile.getId(), permission).thenApplyAsync(state -> {
+            if(state == Tristate.UNDEFINED) return permissionLevelCheck.getAsBoolean();
+            return state.asBoolean();
+        });
     }
 
 }

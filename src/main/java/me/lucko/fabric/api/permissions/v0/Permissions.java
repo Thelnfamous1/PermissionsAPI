@@ -26,12 +26,13 @@
 package me.lucko.fabric.api.permissions.v0;
 
 import com.mojang.authlib.GameProfile;
-import me.infamous.permissions.PermissionsMod;
+import me.infamous.permissions.OfflinePermissionCheckEvent;
+import me.infamous.permissions.PermissionCheckEvent;
 import net.luckperms.api.util.Tristate;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraftforge.common.MinecraftForge;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
@@ -55,19 +56,9 @@ public interface Permissions {
     static @NotNull Tristate getPermissionValue(@NotNull CommandSourceStack source, @NotNull String permission) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(permission, "permission");
-        if(source.isPlayer()){
-            ServerPlayer player = source.getPlayer();
-            UUID uuid = player.getUUID();
-            try{
-                return PermissionsMod.getPerms()
-                        .map(lp -> lp.getPlayerAdapter(ServerPlayer.class).getUser(player))
-                        .map(user -> user.getCachedData().getPermissionData().checkPermission(permission))
-                        .orElse(Tristate.UNDEFINED);
-            } catch (IllegalStateException e){
-                PermissionsMod.trackAndLogMissingCapability(uuid);
-                return Tristate.UNDEFINED;
-            }
-        } else return Tristate.UNDEFINED;
+        PermissionCheckEvent event = new PermissionCheckEvent(source, permission);
+        MinecraftForge.EVENT_BUS.post(event);
+        return event.getState();
     }
 
     /**
@@ -214,15 +205,9 @@ public interface Permissions {
     static @NotNull CompletableFuture<Tristate> getPermissionValue(@NotNull UUID uuid, @NotNull String permission) {
         Objects.requireNonNull(uuid, "uuid");
         Objects.requireNonNull(permission, "permission");
-        try{
-            return PermissionsMod.getPerms()
-                    .map(lp -> lp.getUserManager().loadUser(uuid))
-                    .map(userFuture -> userFuture.thenApplyAsync(user -> user.getCachedData().getPermissionData().checkPermission(permission)))
-                    .orElse(CompletableFuture.completedFuture(Tristate.UNDEFINED));
-        } catch (IllegalStateException e){
-            PermissionsMod.trackAndLogMissingCapability(uuid);
-            return CompletableFuture.completedFuture(Tristate.UNDEFINED);
-        }
+        OfflinePermissionCheckEvent event = new OfflinePermissionCheckEvent(uuid, permission);
+        MinecraftForge.EVENT_BUS.post(event);
+        return event.getState();
     }
 
     /**

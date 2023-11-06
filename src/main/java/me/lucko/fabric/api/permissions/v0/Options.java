@@ -25,10 +25,10 @@
 
 package me.lucko.fabric.api.permissions.v0;
 
-import me.infamous.permissions.PermissionsMod;
+import me.infamous.permissions.OptionRequestEvent;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraftforge.common.MinecraftForge;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
@@ -51,17 +51,9 @@ public interface Options {
     static @NotNull Optional<String> get(@NotNull CommandSourceStack source, @NotNull String key) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(key, "key");
-        if(source.isPlayer()){
-            ServerPlayer player = source.getPlayer();
-            try{
-                return PermissionsMod.getPerms()
-                        .map(lp -> lp.getPlayerAdapter(ServerPlayer.class).getUser(player))
-                        .map(user -> user.getCachedData().getMetaData().getMetaValue(key));
-            } catch (IllegalStateException e){
-                PermissionsMod.trackAndLogMissingCapability(player.getUUID());
-                return Optional.empty();
-            }
-        } else return Optional.empty();
+        OptionRequestEvent event = new OptionRequestEvent(source, key);
+        MinecraftForge.EVENT_BUS.post(event);
+        return event.getValue();
     }
 
     /**
